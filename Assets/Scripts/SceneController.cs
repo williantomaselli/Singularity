@@ -39,6 +39,7 @@ public class SceneController : MonoBehaviour
     public string foodTag = "Interactables/Food";
     public string bedTag  = "Interactables/Bed";
     public string cardTag = "Interactables/Card";
+    public string generatorTag = "Interactables/Generator";
 
     [Header("Diálogo Geral (Opcional)")]
     public GameObject dialogo; // Objeto com o DialogueController geral
@@ -47,6 +48,12 @@ public class SceneController : MonoBehaviour
     [Header("Diálogo de Água e Comida (Objects)")]
     public GameObject[] waterDialogueObjects; // Objeto para diálogo se já consumiu água (índice: day-1)
     public GameObject[] foodDialogueObjects;  // Objeto para diálogo se já consumiu comida (índice: day-1)
+
+    [Header("Interação do Gerador")]
+    public GameObject generatorDialogueObject; // Diálogo para ativação do gerador
+    public float generatorDialogueDuration = 3f; // Duração do diálogo do gerador
+    public bool generatorIsOn = false;           // Flag que indica se o gerador foi ativado
+    private AudioSource currentGeneratorAudioSource; // Áudio do objeto gerador (obtido na colisão)
 
     // Flags para consumo único por dia
     private bool waterConsumedToday = false;
@@ -105,12 +112,12 @@ public class SceneController : MonoBehaviour
         thirst = newThirst;
         waterConsumedToday = false;
         foodConsumedToday = false;
+        generatorIsOn = false;
         UpdateDayDisplay();
     }
 
     void Update()
     {
-
         UpdateDayDisplay();
 
         // Se o jogador pressiona E e há uma interação disponível
@@ -145,23 +152,67 @@ public class SceneController : MonoBehaviour
                     StartCoroutine(HandleInteraction(foodTag));
                 }
             }
+            else if (currentInteraction == generatorTag)
+            {
+                if (!generatorIsOn) // Ativa o gerador somente se ainda não estiver ligado
+                {
+                    isInteracting = true;
+                    HideInteractText();
+
+                    // Toca o diálogo configurado para o gerador
+                    if (generatorDialogueObject != null)
+                    {
+                        StartCoroutine(ActivateAndPlayDialogue(generatorDialogueObject, generatorDialogueDuration));
+                    }
+                    // Define o gerador como ligado
+                    generatorIsOn = true;
+                    // Toca o áudio presente no objeto de colisão (se houver)
+                    if (currentGeneratorAudioSource != null)
+                    {
+                        currentGeneratorAudioSource.Play();
+                    }
+                    isInteracting = false;
+                }
+            }
             else if (currentInteraction == bedTag)
             {
-                // Exige que já tenha consumido água e comida para dormir
-                if (waterConsumedToday && foodConsumedToday)
+                // Para o dia 2, exige que as três missões sejam cumpridas: água, comida e gerador
+                if (day == 2)
                 {
-                    if (sleepSystem != null)
+                    if (waterConsumedToday && foodConsumedToday && generatorIsOn)
                     {
-                        sleepSystem.day = day;
-                        sleepSystem.hunger = hunger;
-                        sleepSystem.thirst = thirst;
-                        sleepSystem.TrySleep(true);
+                        if (sleepSystem != null)
+                        {
+                            sleepSystem.day = day;
+                            sleepSystem.hunger = hunger;
+                            sleepSystem.thirst = thirst;
+                            sleepSystem.TrySleep(true);
+                        }
+                    }
+                    else
+                    {
+                        if (sleepSystem != null)
+                            sleepSystem.TrySleep(false);
                     }
                 }
                 else
                 {
-                    if (sleepSystem != null)
-                        sleepSystem.TrySleep(false);
+                    // Para os demais dias, apenas água e comida são exigidos
+                    if (waterConsumedToday && foodConsumedToday)
+                    {
+                        if (sleepSystem != null)
+                        {
+                            sleepSystem.day = day;
+                            sleepSystem.hunger = hunger;
+                            sleepSystem.thirst = thirst;
+                            sleepSystem.TrySleep(true);
+                        }
+                    }
+                    else
+                    {
+                        if (sleepSystem != null)
+                            sleepSystem.TrySleep(false);
+                    }
                 }
             }
         }
@@ -183,10 +234,17 @@ public class SceneController : MonoBehaviour
         {
             currentInteraction = bedTag;
             ShowInteractText("Press E to sleep");
-        }else if(other.CompareTag(cardTag))
+        }
+        else if (other.CompareTag(cardTag))
         {
             currentInteraction = cardTag;
             ShowInteractText("Press E to get the card");
+        }
+        else if (other.CompareTag(generatorTag))
+        {
+            currentInteraction = generatorTag;
+            ShowInteractText("Press E to turn on the generator");
+            currentGeneratorAudioSource = other.GetComponent<AudioSource>();
         }
     }
 
@@ -195,10 +253,15 @@ public class SceneController : MonoBehaviour
         if ((other.CompareTag(waterTag) && currentInteraction == waterTag) ||
             (other.CompareTag(foodTag) && currentInteraction == foodTag) ||
             (other.CompareTag(bedTag) && currentInteraction == bedTag) ||
-            (other.CompareTag(cardTag) && currentInteraction == cardTag))
+            (other.CompareTag(cardTag) && currentInteraction == cardTag) ||
+            (other.CompareTag(generatorTag) && currentInteraction == generatorTag))
         {
             HideInteractText();
             currentInteraction = "";
+            if (other.CompareTag(generatorTag))
+            {
+                currentGeneratorAudioSource = null;
+            }
         }
     }
 

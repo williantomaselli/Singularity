@@ -10,6 +10,7 @@ TagManager:
   - Interactables/Food
   - Interactables/Bed
   - Interactables/Generator
+  - Interactables/Card
   layers:
   - Default
   - TransparentFX

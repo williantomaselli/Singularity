@@ -13,7 +13,6 @@ public class DoorController : MonoBehaviour
     public Vector3 openOffset = new Vector3(2f, 0f, 0f);
     [Tooltip("Velocidade de abertura/fechamento da porta")]
     public float openSpeed = 2f;
-
     [Tooltip("Dia mínimo necessário para usar a porta (abrir ou teleportar)")]
     public float openInDay = 1;
 
@@ -44,6 +43,14 @@ public class DoorController : MonoBehaviour
     public Image fadeOverlay;
     [Tooltip("Duração do fade in/out")]
     public float fadeDuration = 1f;
+    // --------------------------------------------------
+
+    // ---------- NOVOS CAMPOS PARA DIÁLOGO DE CARTÃO ----------
+    [Header("Dialogue for Card Requirement")]
+    [Tooltip("Objeto de diálogo a ser exibido se o jogador não possuir o cartão")]
+    public GameObject cardDialogueObject;
+    [Tooltip("Duração do diálogo para o cartão (em segundos)")]
+    public float cardDialogueDuration = 3f;
     // --------------------------------------------------
 
     // Posições da porta (modo normal)
@@ -95,8 +102,6 @@ public class DoorController : MonoBehaviour
         else
         {
             // Caso seja porta "normal"
-
-            // Modo sem cartão
             if (!cardNeeded)
             {
                 playerInRange = true;
@@ -105,9 +110,9 @@ public class DoorController : MonoBehaviour
                     StartCoroutine(OpenDoor());
                 }
             }
-            // Modo com cartão
             else
             {
+                // Se a porta requer cartão:
                 if (haveCard)
                 {
                     playerInRange = true;
@@ -118,7 +123,11 @@ public class DoorController : MonoBehaviour
                 }
                 else
                 {
-                    // Se quiser, exiba alguma mensagem dizendo que precisa do cartão
+                    // Jogador não possui o cartão: ativa o diálogo de aviso
+                    if (!isAnimating && cardDialogueObject != null)
+                    {
+                        StartCoroutine(ActivateAndPlayDialogue(cardDialogueObject, cardDialogueDuration));
+                    }
                 }
             }
         }
@@ -220,5 +229,18 @@ public class DoorController : MonoBehaviour
         // Garante que fique no valor final
         c.a = endAlpha;
         img.color = c;
+    }
+
+    // ------------------ MÉTODO PARA ATIVAR E EXECUTAR DIÁLOGO ------------------
+    IEnumerator ActivateAndPlayDialogue(GameObject dialogueObj, float duration)
+    {
+        dialogueObj.SetActive(true);
+        DialogueController dc = dialogueObj.GetComponent<DialogueController>();
+        if (dc != null)
+        {
+            dc.PlayDialogue();
+        }
+        yield return new WaitForSeconds(duration);
+        dialogueObj.SetActive(false);
     }
 }

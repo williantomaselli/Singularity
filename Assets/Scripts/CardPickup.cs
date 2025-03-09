@@ -22,23 +22,27 @@ public class CardPickup : MonoBehaviour
         }
     }
 
-    void OnTriggerEnter(Collider other)
+    void OnTriggerStay(Collider other)
     {
         if (other.CompareTag("Player"))
         {
-            if (doorController != null)
+            if (Input.GetKeyDown(KeyCode.E))
             {
-                doorController.haveCard = true;
-            }
+                if (doorController != null)
+                {
+                    doorController.haveCard = true;
+                    
+                }
 
-            if (cardDialogueObject != null)
-            {
-                StartCoroutine(ActivateAndPlayDialogue(cardDialogueObject, cardDialogueDuration));
+                if (cardDialogueObject != null)
+                {
+                    StartCoroutine(ActivateAndPlayDialogue(cardDialogueObject, cardDialogueDuration));
+                }
+                Destroy(this.gameObject);
             }
-
-            Destroy(gameObject); // Remove o cartão após pegá-lo
         }
     }
+
 
     IEnumerator ActivateAndPlayDialogue(GameObject dialogueObj, float duration)
     {

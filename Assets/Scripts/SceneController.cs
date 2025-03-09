@@ -2,6 +2,7 @@ using System.Collections;
 using UnityEngine;
 using UnityEngine.UI;
 using TMPro;
+using UnityEngine.SceneManagement; // Necessário para carregar cenas
 
 public class SceneController : MonoBehaviour
 {
@@ -46,14 +47,14 @@ public class SceneController : MonoBehaviour
     private DialogueController dialogScript;
 
     [Header("Diálogo de Água e Comida (Objects)")]
-    public GameObject[] waterDialogueObjects; // Objeto para diálogo se já consumiu água (índice: day-1)
-    public GameObject[] foodDialogueObjects;  // Objeto para diálogo se já consumiu comida (índice: day-1)
+    public GameObject[] waterDialogueObjects; // Diálogo para água (índice: day-1)
+    public GameObject[] foodDialogueObjects;  // Diálogo para comida (índice: day-1)
 
     [Header("Interação do Gerador")]
-    public GameObject generatorDialogueObject; // Diálogo para ativação do gerador
-    public float generatorDialogueDuration = 3f; // Duração do diálogo do gerador
-    public bool generatorIsOn = false;           // Flag que indica se o gerador foi ativado
-    private AudioSource currentGeneratorAudioSource; // Áudio do objeto gerador (obtido na colisão)
+    public GameObject generatorDialogueObject;
+    public float generatorDialogueDuration = 3f;
+    public bool generatorIsOn = false;
+    private AudioSource currentGeneratorAudioSource;
 
     // Flags para consumo único por dia
     private bool waterConsumedToday = false;
@@ -69,9 +70,38 @@ public class SceneController : MonoBehaviour
     [Header("Dialogue Duration")]
     public float defaultDialogueDuration = 3f;
 
+    // ------------- CAMPOS ESPECIAIS PARA O DIA 4 -------------
+    [Header("Dia 4 - Diálogos Aleatórios e Vigília")]
+    [Tooltip("Array de diálogos aleatórios para o dia 4.")]
+    public GameObject[] day4RandomDialogues;
+    [Tooltip("Intervalo mínimo entre diálogos aleatórios (em segundos).")]
+    public float randomDialogueIntervalMin = 5f;
+    [Tooltip("Intervalo máximo entre diálogos aleatórios (em segundos).")]
+    public float randomDialogueIntervalMax = 10f;
+    [Tooltip("Duração de cada diálogo aleatório do dia 4 (em segundos).")]
+    public float day4RandomDialogueDuration = 3f;
+    [Tooltip("Diálogo final do dia 4, reproduzido após os 2 minutos de vigília.")]
+    public GameObject day4EndDialogue;
+    [Tooltip("Local para onde o player será teleportado ao final do dia 4 (não utilizado se for feita a transição de cena).")]
+    public Transform day4TeleportLocation;
+    [Tooltip("Tempo (em segundos) que o jogador deve ficar acordado no dia 4.")]
+    public float day4AwakeDuration = 120f;
+    private float day4AwakeTimer = 0f;
+    private bool day4SleepReady = false;
+    private Coroutine day4RandomDialogueCoroutine;
+    private bool day4RoutineRunning = false;
+    private int lastDay4DialogueIndex = -1; // Para evitar repetir o mesmo diálogo consecutivamente
+    [Header("Dia 4 - Audio Source")]
+    [Tooltip("AudioSource que será usado para os diálogos do dia 4.")]
+    public AudioSource day4AudioSource;
+    // ----------------- NOVA SEÇÃO PARA TRANSIÇÃO DE CENA -----------------
+    [Header("Transição de Cena no Dia 4")]
+    [Tooltip("Nome da cena a ser carregada ao final do dia 4.")]
+    public string day4SceneToLoad;
+    // ---------------------------------------------------------
+
     void Start()
     {
-        // Ativa o diálogo geral, se houver
         if (dialogo != null)
         {
             dialogo.SetActive(true);
@@ -100,9 +130,14 @@ public class SceneController : MonoBehaviour
 
         UpdateDayDisplay();
 
-        // Inscreve-se no evento do SleepSystem para atualizar os status ao final do sono
         if (sleepSystem != null)
             sleepSystem.OnSleepFinished += OnSleepFinished;
+
+        // Se for o dia 4, inicia a rotina especial
+        if (day == 4)
+        {
+            StartCoroutine(Day4Routine());
+        }
     }
 
     private void OnSleepFinished(int newDay, float newHunger, float newThirst)
@@ -114,18 +149,32 @@ public class SceneController : MonoBehaviour
         foodConsumedToday = false;
         generatorIsOn = false;
         UpdateDayDisplay();
+
+        if (day != 4 && day4RandomDialogueCoroutine != null)
+        {
+            StopCoroutine(day4RandomDialogueCoroutine);
+            day4RandomDialogueCoroutine = null;
+        }
+        if (day == 4)
+        {
+            StartCoroutine(Day4Routine());
+        }
+        else
+        {
+            day4AwakeTimer = 0f;
+            day4SleepReady = false;
+        }
     }
 
     void Update()
     {
         UpdateDayDisplay();
 
-        // Se o jogador pressiona E e há uma interação disponível
+        // Interações padrão (água, comida, gerador, cama)
         if (!isInteracting && !string.IsNullOrEmpty(currentInteraction) && Input.GetKeyDown(KeyCode.E))
         {
             if (currentInteraction == waterTag)
             {
-                // Se já consumiu água, apenas toca o diálogo e não bloqueia o movimento
                 if (waterConsumedToday)
                 {
                     if (waterDialogueObjects != null && waterDialogueObjects.Length >= day)
@@ -154,19 +203,15 @@ public class SceneController : MonoBehaviour
             }
             else if (currentInteraction == generatorTag)
             {
-                if (!generatorIsOn) // Ativa o gerador somente se ainda não estiver ligado
+                if (!generatorIsOn)
                 {
                     isInteracting = true;
                     HideInteractText();
-
-                    // Toca o diálogo configurado para o gerador
                     if (generatorDialogueObject != null)
                     {
                         StartCoroutine(ActivateAndPlayDialogue(generatorDialogueObject, generatorDialogueDuration));
                     }
-                    // Define o gerador como ligado
                     generatorIsOn = true;
-                    // Toca o áudio presente no objeto de colisão (se houver)
                     if (currentGeneratorAudioSource != null)
                     {
                         currentGeneratorAudioSource.Play();
@@ -176,8 +221,13 @@ public class SceneController : MonoBehaviour
             }
             else if (currentInteraction == bedTag)
             {
-                // Para o dia 2, exige que as três missões sejam cumpridas: água, comida e gerador
-                if (day == 2)
+                // Para o dia 4, a rotina de sono é gerenciada na Day4Routine; se o jogador interagir com a cama, exibimos "não pronto"
+                if (day == 4)
+                {
+                    if (sleepSystem != null)
+                        sleepSystem.TrySleep(false);
+                }
+                else if (day == 2)
                 {
                     if (waterConsumedToday && foodConsumedToday && generatorIsOn)
                     {
@@ -197,7 +247,6 @@ public class SceneController : MonoBehaviour
                 }
                 else
                 {
-                    // Para os demais dias, apenas água e comida são exigidos
                     if (waterConsumedToday && foodConsumedToday)
                     {
                         if (sleepSystem != null)
@@ -212,6 +261,24 @@ public class SceneController : MonoBehaviour
                     {
                         if (sleepSystem != null)
                             sleepSystem.TrySleep(false);
+                    }
+                }
+            }
+        }
+
+        // Lógica especial para o dia 4
+        if (day == 4)
+        {
+            // Incrementa o timer do dia 4 (para ficar 2 minutos acordado)
+            if (!day4SleepReady)
+            {
+                day4AwakeTimer += Time.deltaTime;
+                if (day4AwakeTimer >= day4AwakeDuration)
+                {
+                    day4SleepReady = true;
+                    if (sleepSystem != null)
+                    {
+                        sleepSystem.SetSleepReady();
                     }
                 }
             }
@@ -283,17 +350,14 @@ public class SceneController : MonoBehaviour
     IEnumerator HandleInteraction(string type)
     {
         isInteracting = true;
-        // Para interações de consumo que ainda não foram feitas, desabilita o movimento
         if (playerMovement != null)
             playerMovement.enabled = false;
 
         HideInteractText();
 
-        // Inicia a animação de overlay: fade in
         if (interactionOverlay != null)
             yield return StartCoroutine(FadeImage(interactionOverlay, 0f, 1f, interactionFadeDuration));
 
-        // Toca o áudio e atualiza os status
         if (interactionAudioSource != null)
         {
             if (type == waterTag)
@@ -314,15 +378,19 @@ public class SceneController : MonoBehaviour
 
         yield return new WaitForSeconds(interactionDisplayTime);
 
-        // Fade out do overlay
         if (interactionOverlay != null)
             yield return StartCoroutine(FadeImage(interactionOverlay, 1f, 0f, interactionFadeDuration));
 
-        // Reabilita o movimento do player
         if (playerMovement != null)
             playerMovement.enabled = true;
 
         isInteracting = false;
+
+        // Para dias que não são o 4, se água e comida foram consumidos, define sleep ready
+        if (day != 4 && waterConsumedToday && foodConsumedToday && sleepSystem != null)
+        {
+            sleepSystem.SetSleepReady();
+        }
     }
 
     IEnumerator ActivateAndPlayDialogue(GameObject dialogueObj, float duration)
@@ -331,6 +399,11 @@ public class SceneController : MonoBehaviour
         DialogueController dc = dialogueObj.GetComponent<DialogueController>();
         if (dc != null)
         {
+            // Se for do dia 4, e se o audio source para dia 4 foi atribuído, sobrescreve o áudio dele.
+            if (day == 4 && day4AudioSource != null)
+            {
+                dc.audioSource = day4AudioSource;
+            }
             dc.PlayDialogue();
         }
         yield return new WaitForSeconds(duration);
@@ -375,5 +448,86 @@ public class SceneController : MonoBehaviour
     {
         if (dayDisplayTMP != null)
             dayDisplayTMP.text = "Day " + day;
+    }
+
+    // ------------- ROTINA ESPECIAL DO DIA 4 -------------
+    IEnumerator Day4Routine()
+    {
+        if (day4RoutineRunning) yield break;
+        day4RoutineRunning = true;
+
+        // Controle do movimento do player no dia 4 (ajuste conforme desejado)
+        if (playerMovement != null)
+            playerMovement.enabled = true;
+
+        float elapsed = 0f;
+
+        // Inicia a rotina de diálogos aleatórios
+        day4RandomDialogueCoroutine = StartCoroutine(Day4RandomDialogueRoutine());
+
+        // Aguarda os 2 minutos de vigília
+        while (elapsed < day4AwakeDuration)
+        {
+            elapsed += Time.deltaTime;
+            yield return null;
+        }
+
+        // Para os diálogos aleatórios
+        if (day4RandomDialogueCoroutine != null)
+            StopCoroutine(day4RandomDialogueCoroutine);
+
+        // Toca o diálogo final do dia 4
+        if (day4EndDialogue != null)
+        {
+            yield return StartCoroutine(ActivateAndPlayDialogue(day4EndDialogue, defaultDialogueDuration));
+        }
+
+        // Fade out para escurecer a tela
+        if (sceneFadeImage != null)
+            yield return StartCoroutine(FadeImage(sceneFadeImage, 0f, 1f, sceneFadeDuration));
+
+        // Em vez de acordar no dia 5, carrega a cena definida no inspetor
+        if (!string.IsNullOrEmpty(day4SceneToLoad))
+        {
+            SceneManager.LoadScene(day4SceneToLoad);
+        }
+        else
+        {
+            Debug.LogWarning("Day4SceneToLoad não foi definida no inspetor!");
+        }
+
+        day4RoutineRunning = false;
+    }
+
+    IEnumerator Day4RandomDialogueRoutine()
+    {
+        while (day == 4 && !day4SleepReady)
+        {
+            float waitTime = Random.Range(randomDialogueIntervalMin, randomDialogueIntervalMax);
+            yield return new WaitForSeconds(waitTime);
+            PlayDay4RandomDialogue();
+        }
+    }
+
+    void PlayDay4RandomDialogue()
+    {
+        if (day4RandomDialogues != null && day4RandomDialogues.Length > 0)
+        {
+            int index = Random.Range(0, day4RandomDialogues.Length);
+            // Evita repetir o mesmo diálogo consecutivamente, se possível
+            if (day4RandomDialogues.Length > 1)
+            {
+                while (index == lastDay4DialogueIndex)
+                {
+                    index = Random.Range(0, day4RandomDialogues.Length);
+                }
+            }
+            lastDay4DialogueIndex = index;
+            GameObject dialogueObj = day4RandomDialogues[index];
+            if (dialogueObj != null)
+            {
+                StartCoroutine(ActivateAndPlayDialogue(dialogueObj, day4RandomDialogueDuration));
+            }
+        }
     }
 }

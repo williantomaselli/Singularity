@@ -11,6 +11,8 @@ public class DialogueLine
     public AudioClip voiceClip;
     [Tooltip("Tempo (em segundos) que a legenda ficará na tela")]
     public float displayDuration = 3f;
+    [Tooltip("AudioSource específico para esta linha (opcional). Se não atribuído, o AudioSource padrão do DialogueController será usado.")]
+    public AudioSource customAudioSource;
 }
 
 public class DialogueController : MonoBehaviour
@@ -22,7 +24,7 @@ public class DialogueController : MonoBehaviour
     [Header("Referências UI e Áudio")]
     [Tooltip("Elemento de TextMeshPro para exibir as legendas")]
     public TMP_Text subtitleText;
-    [Tooltip("Fonte de áudio para reproduzir os clipes de dublagem")]
+    [Tooltip("AudioSource padrão para reproduzir os clipes de dublagem caso o diálogo não especifique um customAudioSource")]
     public AudioSource audioSource;
 
     // Este método pode ser chamado de outro script para iniciar o diálogo
@@ -41,9 +43,9 @@ public class DialogueController : MonoBehaviour
         {
             yield break;
         }
-        if (audioSource == null)
+        if (audioSource == null && dialogueLines.Length > 0)
         {
-            yield break;
+            Debug.LogWarning("DialogueController: AudioSource padrão não está atribuído.");
         }
 
         // Percorre cada linha do diálogo
@@ -53,11 +55,14 @@ public class DialogueController : MonoBehaviour
             // Exibe o texto na tela
             subtitleText.text = line.subtitle;
 
+            // Determina qual AudioSource usar: o custom ou o padrão
+            AudioSource currentAudioSource = line.customAudioSource != null ? line.customAudioSource : audioSource;
+
             // Reproduz o áudio, se houver
-            if (line.voiceClip != null)
+            if (line.voiceClip != null && currentAudioSource != null)
             {
-                audioSource.clip = line.voiceClip;
-                audioSource.Play();
+                currentAudioSource.clip = line.voiceClip;
+                currentAudioSource.Play();
             }
             // Aguarda o tempo definido para a linha
             yield return new WaitForSeconds(line.displayDuration);
